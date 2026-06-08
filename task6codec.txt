@@ -1,0 +1,166 @@
+# Market Basket Analysis Pipeline
+# Run in VS Code Python Environment
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Install if missing:
+# pip install mlxtend
+
+from mlxtend.frequent_patterns import apriori, fpgrowth, association_rules
+
+
+# -----------------------------
+# 1. Load Transaction Dataset
+# -----------------------------
+
+try:
+    df = pd.read_csv("groceries_transactions.csv")
+    print("Dataset Loaded Successfully")
+except FileNotFoundError:
+    print("Dataset file not found!")
+    exit()
+
+
+# Display first rows
+print(df.head())
+
+
+# -----------------------------
+# 2. Data Preprocessing
+# -----------------------------
+
+# Convert values to 0 and 1
+df = df.astype(bool)
+
+
+# -----------------------------
+# 3. Apriori Algorithm
+# -----------------------------
+
+frequent_itemsets_ap = apriori(
+    df,
+    min_support=0.02,
+    use_colnames=True
+)
+
+rules_ap = association_rules(
+    frequent_itemsets_ap,
+    metric="lift",
+    min_threshold=1
+)
+
+
+print("\n========== APRIORI RULES ==========")
+print(rules_ap.head())
+
+
+# -----------------------------
+# 4. FP-Growth Algorithm
+# -----------------------------
+
+frequent_itemsets_fp = fpgrowth(
+    df,
+    min_support=0.02,
+    use_colnames=True
+)
+
+rules_fp = association_rules(
+    frequent_itemsets_fp,
+    metric="lift",
+    min_threshold=1
+)
+
+
+print("\n========== FP-GROWTH RULES ==========")
+print(rules_fp.head())
+
+
+# -----------------------------
+# 5. Visualization
+# -----------------------------
+
+# Top frequent items
+
+top_items = (
+    frequent_itemsets_ap
+    .sort_values(by="support", ascending=False)
+    .head(10)
+)
+
+
+plt.figure(figsize=(10,6))
+
+plt.bar(
+    top_items["itemsets"].astype(str),
+    top_items["support"]
+)
+
+plt.title("Top 10 Frequent Itemsets (Apriori)")
+plt.xlabel("Items")
+plt.ylabel("Support")
+
+plt.xticks(rotation=45)
+plt.tight_layout()
+
+plt.show()
+
+
+
+# Association Rule Plot
+
+plt.figure(figsize=(8,6))
+
+
+sns.scatterplot(
+    data=rules_ap,
+    x="confidence",
+    y="lift",
+    size="support"
+)
+
+
+plt.title("Association Rules Analysis")
+plt.xlabel("Confidence")
+plt.ylabel("Lift")
+
+plt.show()
+
+
+
+# -----------------------------
+# 6. Business Insights
+# -----------------------------
+
+
+high_confidence_rules = rules_ap[
+    (rules_ap["confidence"] > 0.6) &
+    (rules_ap["lift"] > 1.2)
+]
+
+
+print("\n========== CROSS SELL OPPORTUNITIES ==========")
+
+
+if len(high_confidence_rules) == 0:
+
+    print("No strong rules found")
+
+else:
+
+    for index,row in high_confidence_rules.iterrows():
+
+        print(
+            "Customer buys:",
+            list(row["antecedents"]),
+            "=> Recommend:",
+            list(row["consequents"]),
+            "| Confidence:",
+            round(row["confidence"],2),
+            "| Lift:",
+            round(row["lift"],2)
+        )
+
+
+print("\nAnalysis Completed Successfully!")
