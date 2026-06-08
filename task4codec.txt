@@ -1,0 +1,316 @@
+# Credit Risk Modeling Pipeline
+# Run in VS Code
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.impute import SimpleImputer
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+    accuracy_score,
+    roc_auc_score
+)
+
+from imblearn.over_sampling import SMOTE
+
+import shap
+import lime
+import lime.lime_tabular
+
+
+# ---------------------------------
+# 1. Load Dataset
+# ---------------------------------
+
+df = pd.read_csv("lendingclub_sample.csv")
+
+print("Dataset Loaded")
+print(df.head())
+
+
+# ---------------------------------
+# 2. Data Cleaning
+# ---------------------------------
+
+# Remove duplicates
+df.drop_duplicates(inplace=True)
+
+# Fill missing values
+num_cols = df.select_dtypes(include=['int64','float64']).columns
+
+cat_cols = df.select_dtypes(include=['object']).columns
+
+
+# Numeric missing values
+num_imputer = SimpleImputer(strategy="median")
+df[num_cols] = num_imputer.fit_transform(df[num_cols])
+
+
+# Categorical missing values
+cat_imputer = SimpleImputer(strategy="most_frequent")
+df[cat_cols] = cat_imputer.fit_transform(df[cat_cols])
+
+
+# ---------------------------------
+# 3. Encode Categorical Data
+# ---------------------------------
+
+encoder = LabelEncoder()
+
+for col in cat_cols:
+    df[col] = encoder.fit_transform(df[col])
+
+
+# ---------------------------------
+# 4. Split Features and Target
+# ---------------------------------
+
+X = df.drop("loan_status", axis=1)
+
+y = df["loan_status"]
+
+
+# ---------------------------------
+# 5. Train Test Split
+# ---------------------------------
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.3,
+    random_state=42,
+    stratify=y
+)
+
+
+# ---------------------------------
+# 6. Handle Class Imbalance
+# ---------------------------------
+
+smote = SMOTE(random_state=42)
+
+X_train_res, y_train_res = smote.fit_resample(
+    X_train,
+    y_train
+)
+
+
+print("\nClass Distribution Before SMOTE")
+print(y_train.value_counts())
+
+
+print("\nClass Distribution After SMOTE")
+print(pd.Series(y_train_res).value_counts())
+
+
+
+# ---------------------------------
+# 7. Scaling
+# ---------------------------------
+
+scaler = StandardScaler()
+
+
+X_train_scaled = scaler.fit_transform(
+    X_train_res
+)
+
+X_test_scaled = scaler.transform(
+    X_test
+)
+
+
+
+# ---------------------------------
+# 8. Train Models
+# ---------------------------------
+
+models = {
+
+    "Logistic Regression":
+        LogisticRegression(max_iter=1000),
+
+    "Decision Tree":
+        DecisionTreeClassifier(
+            max_depth=5,
+            random_state=42
+        ),
+
+    "Random Forest":
+        RandomForestClassifier(
+            n_estimators=100,
+            random_state=42
+        )
+}
+
+
+
+results = {}
+
+
+
+for name, model in models.items():
+
+
+    if name == "Logistic Regression":
+
+        model.fit(
+            X_train_scaled,
+            y_train_res
+        )
+
+        pred = model.predict(
+            X_test_scaled
+        )
+
+
+    else:
+
+        model.fit(
+            X_train_res,
+            y_train_res
+        )
+
+        pred = model.predict(
+            X_test
+        )
+
+
+    results[name] = model
+
+
+    print("\n========================")
+    print(name)
+    print("========================")
+
+
+    print(
+        "Accuracy:",
+        accuracy_score(y_test,pred)
+    )
+
+
+    print(
+        "ROC-AUC:",
+        roc_auc_score(y_test,pred)
+    )
+
+
+    print(
+        confusion_matrix(
+            y_test,
+            pred
+        )
+    )
+
+
+    print(
+        classification_report(
+            y_test,
+            pred
+        )
+    )
+
+
+
+# ---------------------------------
+# 9. SHAP Explainability
+# ---------------------------------
+
+
+rf_model = results["Random Forest"]
+
+
+explainer = shap.TreeExplainer(
+    rf_model
+)
+
+
+shap_values = explainer.shap_values(
+    X_test
+)
+
+
+print("\nGenerating SHAP Plot...")
+
+
+# For binary classification
+if isinstance(shap_values,list):
+
+    shap.summary_plot(
+        shap_values[1],
+        X_test,
+        show=False
+    )
+
+else:
+
+    shap.summary_plot(
+        shap_values,
+        X_test,
+        show=False
+    )
+
+
+plt.show()
+
+
+
+# ---------------------------------
+# 10. LIME Explainability
+# ---------------------------------
+
+
+lime_explainer = lime.lime_tabular.LimeTabularExplainer(
+
+    training_data=np.array(X_train_res),
+
+    feature_names=X.columns,
+
+    class_names=[
+        "Fully Paid",
+        "Default"
+    ],
+
+    mode="classification"
+
+)
+
+
+
+sample = X_test.iloc[0]
+
+
+explanation = lime_explainer.explain_instance(
+
+    sample,
+
+    rf_model.predict_proba,
+
+    num_features=10
+
+)
+
+
+# Save explanation for VS Code
+
+explanation.save_to_file(
+    "lime_credit_explanation.html"
+)
+
+
+print(
+    "\nLIME explanation saved as lime_credit_explanation.html"
+)
+
+
+print("\nCredit Risk Modeling Completed Successfully!")
